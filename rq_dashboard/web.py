@@ -20,6 +20,7 @@ import os
 import re
 from functools import wraps
 from math import ceil
+from datetime import datetime
 
 import arrow
 from flask import (
@@ -519,6 +520,35 @@ def list_jobs(instance_number, queue_name, registry_name, per_page, page):
 @jsonify
 def job_info(instance_number, job_id):
     job = Job.fetch(job_id)
+    
+    # Determine the end time
+    end_time = job.ended_at if job.ended_at else datetime.now()
+    
+    # Calculate the duration
+    if job.enqueued_at and end_time:
+        total_seconds = int((end_time - job.enqueued_at).total_seconds())
+        
+        # Calculate days, hours, minutes, and seconds
+        days, remainder = divmod(total_seconds, 86400)  # 86400 seconds in a day
+        hours, remainder = divmod(remainder, 3600)  # 3600 seconds in an hour
+        minutes, seconds = divmod(remainder, 60)
+        
+        # Construct the duration string
+        duration_parts = []
+        if days:
+            duration_parts.append(f"{days} days")
+        if hours:
+            duration_parts.append(f"{hours} hours")
+        if minutes:
+            duration_parts.append(f"{minutes} minutes")
+        if seconds or not duration_parts:
+            duration_parts.append(f"{seconds} seconds")
+        
+        duration = ", ".join(duration_parts)
+    else:
+        duration = None
+
+
     return dict(
         id=job.id,
         created_at=serialize_date(job.created_at),
@@ -529,6 +559,7 @@ def job_info(instance_number, job_id):
         result=job._result,
         exc_info=str(job.exc_info) if job.exc_info else None,
         description=job.description,
+        duration=duration  # Add this line
     )
 
 
@@ -542,15 +573,9 @@ def list_workers(instance_number):
         (
             dict(
                 name=worker.name,
-                pid=worker.pid,
                 queues=serialize_queue_names(worker),
                 state=str(worker.get_state()),
                 current_job=serialize_current_job(worker.get_current_job()),
-                last_heartbeat=worker.last_heartbeat,
-                birth_date=worker.birth_date,
-                successful_job_count=worker.successful_job_count,
-                failed_job_count=worker.failed_job_count,
-                total_working_time=worker.total_working_time,
                 version=getattr(worker, "version", ""),
                 python_version=getattr(worker, "python_version", ""),
             )
